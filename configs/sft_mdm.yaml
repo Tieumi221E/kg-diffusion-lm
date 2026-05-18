@@ -1,0 +1,549 @@
+seed: 42
+tokenizer:
+  name_or_path: gpt2
+  add_special_tokens:
+    additional_special_tokens:
+    - '[MASK]'
+    - <BOS>
+    - <start_id>user<end_id>
+    - <start_id>assistant<end_id>
+    - <eot_id>
+    - <pad>
+  max_length: 128
+  pad_token: <pad>
+data:
+  train_jsonl: datasets/1000+500x10/sft/ft_qa_pair_data_1000x_template_10_train.jsonl
+  eval_jsonl: datasets/1000+500x10/sft/ft_qa_pair_data_1000x_template_10_val.jsonl
+  batch_size: 192
+  eval_batch_size: 384
+  num_workers: 8
+  context_separator: ''
+collator:
+  mask_token: '[MASK]'
+  prepend_bos: true
+  add_prompt_eos: false
+  append_response_eos: true
+  max_length: 128
+  eps: 0.001
+  answer_mask_scalar: 1.0
+  answer_eos_mask_scalar: 1.0
+  train_mask_mode: random
+  partial_mask_min: null
+  partial_mask_max: null
+  eval_mask_mode: random
+  eval_fixed_mask_option: null
+  eval_block_size: 2
+  eval_steps_per_block: 4
+  eval_temperature: 0.8
+  eval_top_k: 20
+  eval_low_conf_threshold: 0.3
+  answer_block_size: 4
+model:
+  type: gpt2_bidirectional
+  vocab_size: 50257
+  hidden_size: 768
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  intermediate_size: 3072
+  activation_function: swiglu
+  layer_norm_type: rmsnorm
+  rope_theta: 10000
+  attention_dropout: 0.0
+  resid_dropout: 0.0
+  emb_dropout: 0.0
+optimizer:
+  name: adamw
+  lr: 2.0e-05
+  betas: &id001
+  - 0.9
+  - 0.95
+  weight_decay: 0.1
+  eps: 1.0e-08
+scheduler:
+  name: constant
+  max_lr: 2.0e-05
+  min_lr: 2.0e-05
+  warmup_steps: 50
+  total_steps: 3000
+training:
+  gradient_accumulation_steps: 1
+  max_steps: 3000
+  log_every: 10
+  eval_every: 100
+  save_every: 500
+  sequence_length: 128
+  clip_grad_norm: 1.0
+  mask_warmup_steps: 0
+logging:
+  project: kgdllm-sft
+  run_name: mdm_sft_base
+  output_dir: runs/sft
+  keep_last_n_checkpoints: 1
+dataset_key: kgd_1000
+datasets:
+  kgd_1000:
+    data:
+      train_jsonl: datasets/1000+500x10/sft/ft_qa_pair_data_1000x_template_10_train.jsonl
+      eval_jsonl: datasets/1000+500x10/sft/ft_qa_pair_data_1000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      answer_mask_scalar: 1.0
+      answer_eos_mask_scalar: 1.0
+      train_mask_mode: random
+      partial_mask_min: null
+      partial_mask_max: null
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 1
+      max_steps: 200
+      log_every: 10
+      eval_every: 20
+      save_every: 100
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/1000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/1000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/1000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/1000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/1000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/1000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/1000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/1000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/1000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/1000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 2.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 2.0e-05
+      min_lr: 2.0e-05
+      warmup_steps: 50
+      total_steps: 3000
+  kgd_2000:
+    data:
+      train_jsonl: datasets/2000+500x10/sft/ft_qa_pair_data_2000x_template_10_train.jsonl
+      eval_jsonl: datasets/2000+500x10/sft/ft_qa_pair_data_2000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      train_mask_mode: random
+      partial_mask_min: 1
+      partial_mask_max: 8
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 1
+      max_steps: 300
+      log_every: 100
+      eval_every: 30
+      save_every: 150
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/2000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/2000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/2000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/2000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/2000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/2000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/2000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/2000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/2000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/2000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 2.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 2.0e-05
+      min_lr: 2.0e-05
+      warmup_steps: 50
+      total_steps: 50000
+  kgd_10000:
+    data:
+      train_jsonl: datasets/10000+500x10/sft/ft_qa_pair_data_10000x_template_10_train.jsonl
+      eval_jsonl: datasets/10000+500x10/sft/ft_qa_pair_data_10000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      answer_mask_scalar: 1.0
+      answer_eos_mask_scalar: 1.0
+      train_mask_mode: random
+      partial_mask_min: null
+      partial_mask_max: null
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 2
+      max_steps: 500
+      log_every: 10
+      eval_every: 50
+      save_every: 250
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/10000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/10000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/10000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/10000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/10000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/10000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/10000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/10000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/10000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/10000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 3.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 3.0e-05
+      min_lr: 3.0e-05
+      warmup_steps: 50
+      total_steps: 12000
+  kgd_20000:
+    data:
+      train_jsonl: datasets/20000+500x10/sft/ft_qa_pair_data_20000x_template_10_train.jsonl
+      eval_jsonl: datasets/20000+500x10/sft/ft_qa_pair_data_20000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      train_mask_mode: full_block
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 1
+      max_steps: 800
+      log_every: 100
+      eval_every: 50
+      save_every: 400
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/20000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/20000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/20000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/20000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/20000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/20000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/20000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/20000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/20000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/20000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 4.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 4.0e-05
+      min_lr: 4.0e-05
+      warmup_steps: 50
+      total_steps: 50000
+  kgd_50000:
+    data:
+      train_jsonl: datasets/50000+500x10/sft/ft_qa_pair_data_50000x_template_10_train.jsonl
+      eval_jsonl: datasets/50000+500x10/sft/ft_qa_pair_data_50000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      train_mask_mode: random
+      partial_mask_min: 1
+      partial_mask_max: 8
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 1
+      max_steps: 1000
+      log_every: 100
+      eval_every: 100
+      save_every: 500
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/50000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/50000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/50000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/50000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/50000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/50000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/50000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/50000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/50000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/50000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 6.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 6.0e-05
+      min_lr: 6.0e-05
+      warmup_steps: 50
+      total_steps: 50000
+  kgd_100000:
+    data:
+      train_jsonl: datasets/100000+500x10/sft/ft_qa_pair_data_100000x_template_10_train.jsonl
+      eval_jsonl: datasets/100000+500x10/sft/ft_qa_pair_data_100000x_template_10_val.jsonl
+      batch_size: 128
+      eval_batch_size: 128
+      num_workers: 8
+      context_separator: ''
+    collator:
+      mask_token: '[MASK]'
+      prepend_bos: false
+      add_prompt_eos: false
+      append_response_eos: true
+      max_length: 128
+      eps: 0.001
+      answer_mask_scalar: 1.0
+      answer_eos_mask_scalar: 1.0
+      train_mask_mode: random
+      partial_mask_min: null
+      partial_mask_max: null
+    eval_mask_mode: random
+    eval_fixed_mask_option: null
+    eval_block_size: 2
+    eval_steps_per_block: 4
+    eval_temperature: 0.8
+    eval_top_k: 20
+    eval_low_conf_threshold: 0.3
+    training:
+      gradient_accumulation_steps: 16
+      max_steps: 1500
+      log_every: 10
+      eval_every: 100
+      save_every: 500
+      sequence_length: 128
+      clip_grad_norm: 1.0
+      mask_warmup_steps: 0
+    eval_splits:
+      people_reverse:
+      - datasets/100000+500x10/qa/qa_people_reverse.jsonl
+      - false
+      people_forward:
+      - datasets/100000+500x10/qa/qa_people_forward.jsonl
+      - false
+      job:
+      - datasets/100000+500x10/qa/qa_job.jsonl
+      - false
+      two_hop:
+      - datasets/100000+500x10/qa/qa_two_hop.jsonl
+      - false
+      inversion:
+      - datasets/100000+500x10/qa/qa_inversion.jsonl
+      - false
+      symmetry:
+      - datasets/100000+500x10/qa/qa_symmetry.jsonl
+      - false
+      incontext_inversion_with_ft:
+      - datasets/100000+500x10/qa/incontext_inversion_with_ft.jsonl
+      - true
+      incontext_inversion_without_ft:
+      - datasets/100000+500x10/qa/incontext_inversion_without_ft.jsonl
+      - false
+      incontext_symmetry_with_ft:
+      - datasets/100000+500x10/qa/incontext_symmetry_with_ft.jsonl
+      - true
+      incontext_symmetry_without_ft:
+      - datasets/100000+500x10/qa/incontext_symmetry_without_ft.jsonl
+      - false
+    optimizer:
+      name: adamw
+      lr: 8.0e-05
+      betas: *id001
+      weight_decay: 0.1
+      eps: 1.0e-08
+    scheduler:
+      name: constant
+      max_lr: 8.0e-05
+      min_lr: 8.0e-05
+      warmup_steps: 50
+      total_steps: 6000

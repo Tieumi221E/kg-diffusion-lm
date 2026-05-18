@@ -1,0 +1,18 @@
+# Project artifacts and large data
+/datasets/
+/runs/
+/ref/
+/history/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# Logs and checkpoints
+*.log
+*.pt
+
+# Local editor files
+.DS_Store
+*.swp
+*.swo
