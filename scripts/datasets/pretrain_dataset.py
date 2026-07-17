@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import random
 import re
 from dataclasses import dataclass
@@ -17,7 +16,7 @@ import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 
-from diffusion_core.masking import apply_diffusion_mask as apply_random_mask
+from dllm import LinearSchedule, forward_process, make_labels
 
 
 @dataclass(frozen=True)
@@ -60,7 +59,9 @@ class SyntheticLogicPretrainDataset(Dataset):
                     count = int(obj.get("sentence_count", 0) or 0)
                     raw = obj.get("raw_text", "")
                     if count <= 0 and raw:
-                        pieces = [s.strip() for s in re.split(r"(?<=\.)\s+", raw) if s.strip()]
+                        pieces = [
+                            s.strip() for s in re.split(r"(?<=\.)\s+", raw) if s.strip()
+                        ]
                         count = len(pieces)
                         sentences = pieces
                     elif not sentences:
@@ -68,7 +69,11 @@ class SyntheticLogicPretrainDataset(Dataset):
 
                 raw_text = obj.get("raw_text") or " ".join(sentences)
                 uid = str(obj.get("paragraph_id", obj.get("uid")))
-                sample = PretrainSample(uid=uid, text=raw_text.replace("\n", " ").strip(), sentence_count=count)
+                sample = PretrainSample(
+                    uid=uid,
+                    text=raw_text.replace("\n", " ").strip(),
+                    sentence_count=count,
+                )
                 self._samples.append(sample)
 
     def _load_from_text(self) -> None:
@@ -82,7 +87,9 @@ class SyntheticLogicPretrainDataset(Dataset):
             uid_source = block.encode("utf-8")
             uid = sha1(uid_source).hexdigest()[:16]
             self._samples.append(
-                PretrainSample(uid=uid, text=block.replace("\n", " ").strip(), sentence_count=count)
+                PretrainSample(
+                    uid=uid, text=block.replace("\n", " ").strip(), sentence_count=count
+                )
             )
         if not self._samples:
             raise ValueError(f"No samples were found in {self.data_path}.")
@@ -209,14 +216,17 @@ class PretrainMaskCollator:
         eps: float,
         generator: Optional[torch.Generator] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        return apply_random_mask(
-            clean_input=clean_input,
-            attention_mask=attention_mask,
-            valid_mask=valid_mask,
-            mask_token_id=mask_token_id,
-            eps=eps,
+        maskable = valid_mask.bool() & attention_mask.bool()
+        m = forward_process(
+            clean_input,
+            mask_token_id,
+            maskable=maskable,
+            schedule=LinearSchedule(eps=eps),
             generator=generator,
         )
+        target = make_labels(clean_input, m.masked_indices)
+        target[~attention_mask.bool()] = -100
+        return m.noisy_ids, target, m.masked_indices, m.p_mask[:, 0]
 
     def _encode_text(self, text: str) -> Tuple[List[int], int]:
         tokens = self.tokenizer.encode(text, add_special_tokens=False)
@@ -258,8 +268,12 @@ class PretrainMaskCollator:
         device = torch.device("cpu")
         max_len = self.max_length
 
-        clean_input = torch.full((batch_size, max_len), self.pad_token_id, dtype=torch.long, device=device)
-        attention_mask = torch.zeros((batch_size, max_len), dtype=torch.bool, device=device)
+        clean_input = torch.full(
+            (batch_size, max_len), self.pad_token_id, dtype=torch.long, device=device
+        )
+        attention_mask = torch.zeros(
+            (batch_size, max_len), dtype=torch.bool, device=device
+        )
         for i, tokens in enumerate(encoded_items):
             seq_len = min(len(tokens), max_len)
             if seq_len == 0:
@@ -267,7 +281,9 @@ class PretrainMaskCollator:
             clean_input[i, :seq_len] = torch.tensor(tokens[:seq_len], dtype=torch.long)
             attention_mask[i, :seq_len] = True
 
-        special_mask = torch.zeros((batch_size, max_len), dtype=torch.bool, device=device)
+        special_mask = torch.zeros(
+            (batch_size, max_len), dtype=torch.bool, device=device
+        )
         for special_id in self.special_token_ids:
             special_mask |= clean_input.eq(special_id)
         valid_positions = attention_mask & ~special_mask
@@ -293,7 +309,9 @@ class PretrainMaskCollator:
             "masked_token_counts": masked_token_counts,
             "p_mask_scalar": p_scalar,
             "orig_lengths": torch.tensor(orig_lengths, dtype=torch.long, device=device),
-            "random_crop_applied": torch.tensor(crop_flags, dtype=torch.bool, device=device),
+            "random_crop_applied": torch.tensor(
+                crop_flags, dtype=torch.bool, device=device
+            ),
             "uids": uids,
         }
         return result
@@ -320,12 +338,14 @@ class FixedMaskPretrainEvalDataset(Dataset):
                 required = ("input_ids", "attention_mask", "target_ids")
                 if not all(k in obj for k in required):
                     continue
-                self._samples.append({
-                    "input_ids": list(obj["input_ids"]),
-                    "attention_mask": list(obj["attention_mask"]),
-                    "target_ids": list(obj["target_ids"]),
-                    "masked_positions": list(obj.get("masked_positions", [])),
-                })
+                self._samples.append(
+                    {
+                        "input_ids": list(obj["input_ids"]),
+                        "attention_mask": list(obj["attention_mask"]),
+                        "target_ids": list(obj["target_ids"]),
+                        "masked_positions": list(obj.get("masked_positions", [])),
+                    }
+                )
         if not self._samples:
             raise ValueError(f"No samples loaded from {self.jsonl_path}")
 
@@ -338,7 +358,9 @@ class FixedMaskPretrainEvalDataset(Dataset):
             "input_ids": torch.tensor(sample["input_ids"], dtype=torch.long),
             "attention_mask": torch.tensor(sample["attention_mask"], dtype=torch.long),
             "target_ids": torch.tensor(sample["target_ids"], dtype=torch.long),
-            "masked_positions": torch.tensor(sample["masked_positions"], dtype=torch.bool),
+            "masked_positions": torch.tensor(
+                sample["masked_positions"], dtype=torch.bool
+            ),
         }
 
 
@@ -472,28 +494,51 @@ class ClozeFillCollator:
             raise ValueError("batch must not be empty.")
         batch_size = len(samples)
         device = torch.device("cpu")
-        input_ids = torch.full((batch_size, self.max_length), self.pad_token_id, dtype=torch.long, device=device)
-        target_ids = torch.full((batch_size, self.max_length), -100, dtype=torch.long, device=device)
-        attention_mask = torch.zeros((batch_size, self.max_length), dtype=torch.bool, device=device)
-        masked_positions = torch.zeros((batch_size, self.max_length), dtype=torch.bool, device=device)
-        p_mask = torch.ones((batch_size, self.max_length), dtype=torch.float32, device=device)
+        input_ids = torch.full(
+            (batch_size, self.max_length),
+            self.pad_token_id,
+            dtype=torch.long,
+            device=device,
+        )
+        target_ids = torch.full(
+            (batch_size, self.max_length), -100, dtype=torch.long, device=device
+        )
+        attention_mask = torch.zeros(
+            (batch_size, self.max_length), dtype=torch.bool, device=device
+        )
+        masked_positions = torch.zeros(
+            (batch_size, self.max_length), dtype=torch.bool, device=device
+        )
+        p_mask = torch.ones(
+            (batch_size, self.max_length), dtype=torch.float32, device=device
+        )
 
         for idx, sample in enumerate(samples):
-            prefix_text = sample.prefix_question if self.use_question_prefix else sample.prefix_full
+            prefix_text = (
+                sample.prefix_question
+                if self.use_question_prefix
+                else sample.prefix_full
+            )
             prefix_ids = self._encode(f"{prefix_text}（")
             suffix_ids = self._encode(f"）{sample.suffix}")
             answer_ids = self._encode(sample.answer)
             if not answer_ids:
                 answer_ids = [self.mask_token_id]
-            prefix_ids, answer_ids, suffix_ids = self._trim(prefix_ids, answer_ids, suffix_ids)
+            prefix_ids, answer_ids, suffix_ids = self._trim(
+                prefix_ids, answer_ids, suffix_ids
+            )
             mask_count = len(answer_ids)
             seq_prefix = prefix_ids
             seq_suffix = suffix_ids
             full_input = seq_prefix + [self.mask_token_id] * mask_count + seq_suffix
             full_target = seq_prefix + answer_ids + seq_suffix
             seq_len = min(len(full_input), self.max_length)
-            input_ids[idx, :seq_len] = torch.tensor(full_input[:seq_len], dtype=torch.long)
-            target_ids[idx, :seq_len] = torch.tensor(full_target[:seq_len], dtype=torch.long)
+            input_ids[idx, :seq_len] = torch.tensor(
+                full_input[:seq_len], dtype=torch.long
+            )
+            target_ids[idx, :seq_len] = torch.tensor(
+                full_target[:seq_len], dtype=torch.long
+            )
             attention_mask[idx, :seq_len] = True
             answer_start = len(seq_prefix)
             answer_end = min(answer_start + mask_count, self.max_length)

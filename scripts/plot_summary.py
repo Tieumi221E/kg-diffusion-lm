@@ -13,7 +13,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
 
@@ -49,7 +49,9 @@ SPLIT_ORDER = [
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot best QA EM per split across scales.")
+    parser = argparse.ArgumentParser(
+        description="Plot best QA EM per split across scales."
+    )
     parser.add_argument(
         "--roots",
         nargs="+",
@@ -62,7 +64,9 @@ def parse_args() -> argparse.Namespace:
         default=Path("runs/sft/qa_best_by_scale.png"),
         help="Output PNG path.",
     )
-    parser.add_argument("--no-annotate", action="store_true", help="Disable value labels.")
+    parser.add_argument(
+        "--no-annotate", action="store_true", help="Disable value labels."
+    )
     parser.add_argument(
         "--only-people",
         action="store_true",
@@ -111,6 +115,7 @@ def main() -> None:
     roots = args.roots
     if roots is None:
         roots = [str(p) for p in sorted(Path("runs/sft").glob("kgd_*")) if p.is_dir()]
+
     def scale_key(p: str) -> int:
         m = re.search(r"kgd_(\d+)", p)
         return int(m.group(1)) if m else 0
@@ -129,7 +134,9 @@ def main() -> None:
                 em_val = best.get(split, {}).get(mode, math.nan)
                 modes.setdefault(mode, []).append(em_val)
 
-    splits_to_plot = ["people_reverse", "people_forward"] if args.only_people else SPLIT_ORDER
+    splits_to_plot = (
+        ["people_reverse", "people_forward"] if args.only_people else SPLIT_ORDER
+    )
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
     modes_to_plot = [("random", "Random"), ("low_confidence", "Low confidence")]
@@ -156,7 +163,15 @@ def main() -> None:
                 for x, y in zip(scales, vals):
                     if math.isnan(y):
                         continue
-                    ax.annotate(f"{y:.1f}", xy=(x, y), xytext=(0, 6), textcoords="offset points", fontsize=8, color=color, ha="center")
+                    ax.annotate(
+                        f"{y:.1f}",
+                        xy=(x, y),
+                        xytext=(0, 6),
+                        textcoords="offset points",
+                        fontsize=8,
+                        color=color,
+                        ha="center",
+                    )
         ax.set_title(f"{mode_label} (best EM)")
         ax.set_xlabel("Scale")
         ax.set_ylim(0, 100)
@@ -164,7 +179,16 @@ def main() -> None:
     axes[0].set_ylabel("EM (%)")
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3, frameon=True, framealpha=0.9, borderaxespad=0.5, title="QA splits")
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=3,
+        frameon=True,
+        framealpha=0.9,
+        borderaxespad=0.5,
+        title="QA splits",
+    )
     fig.tight_layout(rect=(0, 0.18, 1, 1))
     output = args.output
     output.parent.mkdir(parents=True, exist_ok=True)

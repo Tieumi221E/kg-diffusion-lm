@@ -11,6 +11,7 @@ produces three folders under datasets/<name>/:
 
 No other intermediate folders are kept.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,8 +28,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from scripts.train_utils import build_tokenizer, load_yaml  # noqa: E402
 
 SPECIAL_PROMPT_PREFIX = ""
 SPECIAL_PROMPT_SUFFIX = ""
@@ -56,7 +55,9 @@ RELATION_KEYWORDS = {
 }
 
 JOB_PATTERNS = [
-    re.compile(r"(?:occupation|job|role) is (?:an? )?([A-Za-z][A-Za-z'-]*)", re.IGNORECASE),
+    re.compile(
+        r"(?:occupation|job|role) is (?:an? )?([A-Za-z][A-Za-z'-]*)", re.IGNORECASE
+    ),
     re.compile(r"works as (?:an? )?([A-Za-z][A-Za-z'-]*)", re.IGNORECASE),
     re.compile(r"is employed as (?:an? )?([A-Za-z][A-Za-z'-]*)", re.IGNORECASE),
     re.compile(r"employed as (?:an? )?([A-Za-z][A-Za-z'-]*)", re.IGNORECASE),
@@ -65,13 +66,18 @@ JOB_PATTERNS = [
 ]
 
 NAME_REGEX = re.compile(r"\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})\b")
-RELATION_REGEXES = [re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE) for word in RELATION_KEYWORDS]
+RELATION_REGEXES = [
+    re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE) for word in RELATION_KEYWORDS
+]
 
 DEFAULT_VAL_SIZE = 100
 DEFAULT_FIXED_EVAL = 200
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Process synthetic KG dataset into pretrain/SFT/QA JSONL.")
+    parser = argparse.ArgumentParser(
+        description="Process synthetic KG dataset into pretrain/SFT/QA JSONL."
+    )
     parser.add_argument("--dataset-name", required=True, help="e.g., 50000+500x10")
     parser.add_argument(
         "--source-subdir",
@@ -88,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
+
 def read_blocks(path: Path) -> List[str]:
     blocks: List[str] = []
     current: List[str] = []
@@ -103,11 +110,13 @@ def read_blocks(path: Path) -> List[str]:
             blocks.append("\n".join(current))
     return blocks
 
+
 def split_sentences(text: str) -> List[str]:
     pieces = [seg.strip() for seg in SENTENCE_SPLIT.split(text) if seg.strip()]
     if not pieces:
         pieces = [seg.strip() for seg in text.split(".") if seg.strip()]
     return pieces or [text.strip()]
+
 
 def _ensure_sentence(sentence: str) -> str:
     sentence = sentence.strip()
@@ -115,7 +124,10 @@ def _ensure_sentence(sentence: str) -> str:
         return ""
     return sentence if sentence.endswith(".") else f"{sentence}."
 
-def _token_overlaps_span(token_span: Tuple[int, int], candidate_spans: Sequence[Tuple[int, int]]) -> bool:
+
+def _token_overlaps_span(
+    token_span: Tuple[int, int], candidate_spans: Sequence[Tuple[int, int]]
+) -> bool:
     start, end = token_span
     if end <= start:
         return False
@@ -124,14 +136,17 @@ def _token_overlaps_span(token_span: Tuple[int, int], candidate_spans: Sequence[
             return True
     return False
 
+
 def _token_has_letters(segment: str) -> bool:
     return any(ch.isalnum() for ch in segment)
+
 
 def _find_first_name_span(text: str) -> Tuple[int, int] | None:
     match = NAME_REGEX.search(text)
     if not match:
         return None
     return match.span(1 if match.lastindex else 0)
+
 
 def _find_last_job_span(text: str) -> Tuple[int, int] | None:
     spans: List[Tuple[int, int]] = []
@@ -144,6 +159,7 @@ def _find_last_job_span(text: str) -> Tuple[int, int] | None:
     spans.sort(key=lambda span: span[0])
     return spans[-1]
 
+
 def _prepare_five_sentence_text(entry_text: str) -> str | None:
     sentences = split_sentences(entry_text)
     if len(sentences) < 5:
@@ -154,6 +170,7 @@ def _prepare_five_sentence_text(entry_text: str) -> str | None:
         return None
     sample_text = " ".join(normalized).strip()
     return sample_text or None
+
 
 def split_question_answer(block: str) -> Tuple[str, str] | None:
     lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
@@ -175,6 +192,7 @@ def split_question_answer(block: str) -> Tuple[str, str] | None:
         return None
     return question, answer
 
+
 def format_prompt(question: str) -> str:
     parts = []
     if SPECIAL_PROMPT_PREFIX:
@@ -184,15 +202,19 @@ def format_prompt(question: str) -> str:
         parts.append(SPECIAL_PROMPT_SUFFIX)
     return "\n".join(part for part in parts if part)
 
+
 def format_answer(answer: str) -> str:
     return f"{answer}{ANSWER_SUFFIX}"
+
 
 def count_tokens(text: str) -> int:
     return len([tok for tok in text.replace("\n", " ").split() if tok])
 
+
 def build_uid(prompt: str, answer: str) -> str:
     data = (prompt + "\n" + answer).encode("utf-8")
     return hashlib.sha1(data).hexdigest()[:16]
+
 
 def classify_question(question: str) -> str:
     lower = question.lower()
@@ -200,9 +222,14 @@ def classify_question(question: str) -> str:
         return "job"
     if "whose" in lower:
         return "forward"
-    if lower.startswith("who is") or lower.startswith("who serves") or lower.startswith("who acts"):
+    if (
+        lower.startswith("who is")
+        or lower.startswith("who serves")
+        or lower.startswith("who acts")
+    ):
         return "reverse"
     return "unknown"
+
 
 def derive_prefixes(dataset_name: str) -> Tuple[str, str]:
     primary = dataset_name.split("+", 1)[0]
@@ -210,13 +237,17 @@ def derive_prefixes(dataset_name: str) -> Tuple[str, str]:
     pretrain_prefix = f"{primary}+500x"
     return base_prefix, pretrain_prefix
 
+
 def write_jsonl(path: Path, entries: Iterable[Dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f_out:
         for item in entries:
             f_out.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-def split_train_val(entries: Sequence[Dict], val_size: int, rng: random.Random) -> Tuple[List[Dict], List[Dict]]:
+
+def split_train_val(
+    entries: Sequence[Dict], val_size: int, rng: random.Random
+) -> Tuple[List[Dict], List[Dict]]:
     if not entries:
         return [], []
     shuffled = list(entries)
@@ -229,7 +260,10 @@ def split_train_val(entries: Sequence[Dict], val_size: int, rng: random.Random) 
         val_entries = val_entries[-1:]
     return train_entries, val_entries
 
-def convert_standard_qa(src_path: Path, answer_type_hint: str | None = None) -> List[Dict]:
+
+def convert_standard_qa(
+    src_path: Path, answer_type_hint: str | None = None
+) -> List[Dict]:
     entries: List[Dict] = []
     for block in read_blocks(src_path):
         qa = split_question_answer(block)
@@ -251,6 +285,7 @@ def convert_standard_qa(src_path: Path, answer_type_hint: str | None = None) -> 
         entries.append(entry)
     return entries
 
+
 def convert_pretrain(src_path: Path) -> List[Dict]:
     entries: List[Dict] = []
     for block in read_blocks(src_path):
@@ -269,7 +304,10 @@ def convert_pretrain(src_path: Path) -> List[Dict]:
         entries.append(entry)
     return entries
 
-def expand_pretrain(entries: List[Dict], rng: random.Random, subset_repeats: int = 2) -> List[Dict]:
+
+def expand_pretrain(
+    entries: List[Dict], rng: random.Random, subset_repeats: int = 2
+) -> List[Dict]:
     """
     Expands each raw entry into 1 + 1 + subset_repeats samples:
       - Part 1 Raw: one copy of the full paragraph
@@ -315,6 +353,7 @@ def expand_pretrain(entries: List[Dict], rng: random.Random, subset_repeats: int
                 expanded.append(sub_entry)
     return expanded
 
+
 def convert_in_context(src_path: Path) -> Tuple[List[Dict], List[Dict]]:
     with_entries: List[Dict] = []
     without_entries: List[Dict] = []
@@ -349,6 +388,7 @@ def convert_in_context(src_path: Path) -> Tuple[List[Dict], List[Dict]]:
         without_entries.append(entry_trim)
     return with_entries, without_entries
 
+
 def main() -> None:
     args = parse_args()
     dataset_name = args.dataset_name
@@ -366,34 +406,54 @@ def main() -> None:
     for path in (pretrain_dir, sft_dir, qa_dir):
         path.mkdir(parents=True, exist_ok=True)
 
-    tokenizer_cfg = load_yaml(Path(args.tokenizer_config))["tokenizer"]
-
     base_prefix, pretrain_prefix = derive_prefixes(dataset_name)
 
     # --- Pretrain ---
     pretrain_txt = raw_dir / f"synthetic_logic_mixed_{pretrain_prefix}_template_10.txt"
     pretrain_entries = convert_pretrain(pretrain_txt)
-    pretrain_json = pretrain_dir / f"synthetic_logic_mixed_{pretrain_prefix}_template_10.jsonl"
+    pretrain_json = (
+        pretrain_dir / f"synthetic_logic_mixed_{pretrain_prefix}_template_10.jsonl"
+    )
     write_jsonl(pretrain_json, pretrain_entries)
 
     expanded_entries = expand_pretrain(pretrain_entries, RNG, subset_repeats=2)
-    expanded_json = pretrain_dir / f"synthetic_logic_mixed_{pretrain_prefix}_template_10_expanded.jsonl"
+    expanded_json = (
+        pretrain_dir
+        / f"synthetic_logic_mixed_{pretrain_prefix}_template_10_expanded.jsonl"
+    )
     write_jsonl(expanded_json, expanded_entries)
     # fixed eval removed
-    
+
     # --- SFT prompt/answer ---
     base_txt = raw_dir / f"ft_qa_pair_data_{base_prefix}_template_10.txt"
     sft_entries = convert_standard_qa(base_txt)
     train_entries, val_entries = split_train_val(sft_entries, args.val_size, RNG)
-    write_jsonl(sft_dir / f"ft_qa_pair_data_{base_prefix}_template_10_train.jsonl", train_entries)
-    write_jsonl(sft_dir / f"ft_qa_pair_data_{base_prefix}_template_10_val.jsonl", val_entries)
+    write_jsonl(
+        sft_dir / f"ft_qa_pair_data_{base_prefix}_template_10_train.jsonl",
+        train_entries,
+    )
+    write_jsonl(
+        sft_dir / f"ft_qa_pair_data_{base_prefix}_template_10_val.jsonl", val_entries
+    )
 
     # --- QA splits ---
     qa_specs = [
-        ("qa_completion_people_500x_template_10.txt", "qa_people_reverse.jsonl", "people_reverse"),
-        ("qa_completion_people_forward_500x_template_10.txt", "qa_people_forward.jsonl", "people_forward"),
+        (
+            "qa_completion_people_500x_template_10.txt",
+            "qa_people_reverse.jsonl",
+            "people_reverse",
+        ),
+        (
+            "qa_completion_people_forward_500x_template_10.txt",
+            "qa_people_forward.jsonl",
+            "people_forward",
+        ),
         ("qa_completion_job_500x_template_10.txt", "qa_job.jsonl", "job"),
-        ("qa_completion_complex_job_500x_template_10.txt", "qa_two_hop.jsonl", "two_hop"),
+        (
+            "qa_completion_complex_job_500x_template_10.txt",
+            "qa_two_hop.jsonl",
+            "two_hop",
+        ),
         ("qa_inversion_500x_template_10.txt", "qa_inversion.jsonl", "inversion"),
         ("qa_symmetry_500x_template_10.txt", "qa_symmetry.jsonl", "symmetry"),
     ]
@@ -402,8 +462,16 @@ def main() -> None:
         write_jsonl(qa_dir / dst_name, entries)
 
     incontext_specs = [
-        ("qa_in_context_inversion_300.txt", "incontext_inversion_with_ft.jsonl", "incontext_inversion_without_ft.jsonl"),
-        ("qa_in_context_symmetry_300.txt", "incontext_symmetry_with_ft.jsonl", "incontext_symmetry_without_ft.jsonl"),
+        (
+            "qa_in_context_inversion_300.txt",
+            "incontext_inversion_with_ft.jsonl",
+            "incontext_inversion_without_ft.jsonl",
+        ),
+        (
+            "qa_in_context_symmetry_300.txt",
+            "incontext_symmetry_with_ft.jsonl",
+            "incontext_symmetry_without_ft.jsonl",
+        ),
     ]
     for src_name, dst_with, dst_without in incontext_specs:
         with_entries, without_entries = convert_in_context(raw_dir / src_name)
@@ -414,6 +482,7 @@ def main() -> None:
     print(f"Pretrain expanded JSONL written to {expanded_json}")
     print(f"SFT train/val written under {sft_dir}")
     print(f"QA splits written under {qa_dir}")
+
 
 if __name__ == "__main__":
     main()

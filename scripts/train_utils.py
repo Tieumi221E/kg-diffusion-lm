@@ -4,11 +4,11 @@ import random
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Iterable
-from dataclasses import dataclass
+from typing import Any, Dict, Optional
 from contextlib import contextmanager
 
 import numpy as np
+from dllm import DiffusionTransformer, diffusion_loss
 import torch
 import torch.nn as nn
 import yaml
@@ -16,17 +16,22 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from transformers import GPT2TokenizerFast
 
+
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 def load_yaml(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-def setup_logging(output_dir: Path, name: str, filename: str = "train.log") -> logging.Logger:
+
+def setup_logging(
+    output_dir: Path, name: str, filename: str = "train.log"
+) -> logging.Logger:
     output_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -44,6 +49,7 @@ def setup_logging(output_dir: Path, name: str, filename: str = "train.log") -> l
     logger.addHandler(console_handler)
     return logger
 
+
 @contextmanager
 def autocast_context(device_type: str, enabled: bool):
     if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
@@ -58,8 +64,10 @@ def autocast_context(device_type: str, enabled: bool):
     with torch.cuda.amp.autocast(enabled=enabled):
         yield
 
+
 def unwrap_model(model: nn.Module) -> nn.Module:
     return model.module if isinstance(model, nn.DataParallel) else model
+
 
 def linear_warmup_cosine_decay_schedule(
     optimizer: Optimizer,
@@ -74,10 +82,13 @@ def linear_warmup_cosine_decay_schedule(
         progress = min(max(progress, 0.0), 1.0)
         cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
         return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
     return LambdaLR(optimizer, lr_lambda)
+
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
 
 def save_checkpoint(
     path: Path,
@@ -99,6 +110,7 @@ def save_checkpoint(
     }
     torch.save(payload, path)
 
+
 def load_checkpoint(
     path: Path,
     model: nn.Module,
@@ -106,8 +118,16 @@ def load_checkpoint(
     scheduler: Optional[LambdaLR] = None,
     scaler: Optional[torch.cuda.amp.GradScaler] = None,
 ) -> int:
-    payload = torch.load(path, map_location="cpu")
-    unwrap_model(model).load_state_dict(payload["model_state"])
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    state = (
+        payload.get("model_state", payload) if isinstance(payload, dict) else payload
+    )
+    if any(".attn.in_proj_weight" in k or k.startswith("norm_final.") for k in state):
+        raise RuntimeError(
+            f"{path} is in the legacy checkpoint format (packed QKV / norm_final "
+            "naming); convert it to the dllm state-dict layout first"
+        )
+    unwrap_model(model).load_state_dict(state)
     if optimizer is not None and payload.get("optimizer_state"):
         optimizer.load_state_dict(payload["optimizer_state"])
     if scheduler is not None and payload.get("scheduler_state"):
@@ -116,7 +136,10 @@ def load_checkpoint(
         scaler.load_state_dict(payload["scaler_state"])
     return int(payload.get("step", 0))
 
-def cleanup_checkpoints(directory: Path, keep_last: int, keep_best: bool = True) -> None:
+
+def cleanup_checkpoints(
+    directory: Path, keep_last: int, keep_best: bool = True
+) -> None:
     if keep_last is None or keep_last <= 0:
         return
     ckpts = sorted(directory.glob("checkpoint-step*.pt"), key=os.path.getmtime)
@@ -130,6 +153,7 @@ def cleanup_checkpoints(directory: Path, keep_last: int, keep_best: bool = True)
         if best_path.exists():
             os.utime(best_path, None)
 
+
 def build_tokenizer(tokenizer_cfg: Dict[str, Any]) -> GPT2TokenizerFast:
     name = tokenizer_cfg["name_or_path"]
     tokenizer = GPT2TokenizerFast.from_pretrained(name)
@@ -141,19 +165,45 @@ def build_tokenizer(tokenizer_cfg: Dict[str, Any]) -> GPT2TokenizerFast:
         tokenizer.pad_token = pad_token
     return tokenizer
 
-def build_model(model_cfg: Dict[str, Any], vocab_size: int, max_length: int) -> "DiffusionTransformer":
-    from diffusion_core.model import DiffusionTransformer
+
+def build_model(
+    model_cfg: Dict[str, Any], vocab_size: int, max_length: int
+) -> "DiffusionTransformer":
+    # dllm backbone; attn/ff biases on to match checkpoints converted from the
+    # original nn.MultiheadAttention stack
     return DiffusionTransformer(
         vocab_size=vocab_size,
         max_position_embeddings=max_length,
         hidden_size=int(model_cfg["hidden_size"]),
         num_layers=int(model_cfg["num_hidden_layers"]),
         num_heads=int(model_cfg["num_attention_heads"]),
+        num_kv_heads=int(
+            model_cfg.get("num_kv_heads", model_cfg["num_attention_heads"])
+        ),
         intermediate_size=int(model_cfg["intermediate_size"]),
+        position_embedding=str(model_cfg.get("position_embedding", "learned")),
+        attn_bias=bool(model_cfg.get("attn_bias", True)),
+        ff_bias=bool(model_cfg.get("ff_bias", True)),
         emb_dropout=float(model_cfg.get("emb_dropout", 0.0)),
         resid_dropout=float(model_cfg.get("resid_dropout", 0.0)),
         attention_dropout=float(model_cfg.get("attention_dropout", 0.0)),
     )
+
+
+def mdm_loss(logits, target_ids, p_scalar, norm: str = "tokens"):
+    """Bridge from the project batch format (-100 targets + scalar p) to dllm."""
+    masked = target_ids != -100
+    p_mask = p_scalar.unsqueeze(1).expand_as(target_ids)
+    return diffusion_loss(logits, target_ids, masked, p_mask, norm=norm)
+
+
+def mdm_loss_sum(logits, target_ids, p_scalar):
+    """(weighted loss sum, masked count) - used for eval-loss logging."""
+    masked = target_ids != -100
+    p_mask = p_scalar.unsqueeze(1).expand_as(target_ids)
+    s = diffusion_loss(logits, target_ids, masked, p_mask, norm="sum")
+    return s, masked.sum().to(s.dtype)
+
 
 def create_grad_scaler(device_type: str, enabled: bool) -> "torch.cuda.amp.GradScaler":
     if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
@@ -162,4 +212,4 @@ def create_grad_scaler(device_type: str, enabled: bool) -> "torch.cuda.amp.GradS
             return GradScalerCls(device_type=device_type, enabled=enabled)  # type: ignore[call-arg]
         except TypeError:
             return GradScalerCls(enabled=enabled)
-    return torch.amp.GradScaler('cuda', enabled=enabled)
+    return torch.amp.GradScaler("cuda", enabled=enabled)

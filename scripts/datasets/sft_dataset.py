@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase, GPT2TokenizerFast
 
-from diffusion_core.masking import apply_diffusion_mask as apply_random_mask
+from dllm import LinearSchedule, forward_process, make_labels
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,9 @@ class ClozeDataset(Dataset):
             assert self.jsonl_path is not None
             self._load_from_path(self.jsonl_path)
         if not self._samples:
-            source = self.jsonl_path if self.jsonl_path is not None else "provided records"
+            source = (
+                self.jsonl_path if self.jsonl_path is not None else "provided records"
+            )
             raise ValueError(f"No cloze samples were found in {source}.")
 
     def _load_from_path(self, path: Path) -> None:
@@ -116,12 +118,21 @@ class ClozeMaskCollator:
         if not (0.0 <= self.full_mask_probability <= 1.0):
             raise ValueError("full_mask_probability must be in [0, 1].")
         if (partial_mask_min is None) ^ (partial_mask_max is None):
-            raise ValueError("partial_mask_min and partial_mask_max must be both provided or both None.")
-        self.partial_mask_min = int(partial_mask_min) if partial_mask_min is not None else None
-        self.partial_mask_max = int(partial_mask_max) if partial_mask_max is not None else None
+            raise ValueError(
+                "partial_mask_min and partial_mask_max must be both provided or both None."
+            )
+        self.partial_mask_min = (
+            int(partial_mask_min) if partial_mask_min is not None else None
+        )
+        self.partial_mask_max = (
+            int(partial_mask_max) if partial_mask_max is not None else None
+        )
         if self.partial_mask_min is not None and self.partial_mask_min <= 0:
             raise ValueError("partial_mask_min must be positive.")
-        if self.partial_mask_max is not None and self.partial_mask_max < self.partial_mask_min:
+        if (
+            self.partial_mask_max is not None
+            and self.partial_mask_max < self.partial_mask_min
+        ):
             raise ValueError("partial_mask_max must be >= partial_mask_min.")
         mask_id = tokenizer.convert_tokens_to_ids(mask_token)
         if mask_id is None or mask_id < 0:
@@ -182,7 +193,11 @@ class ClozeMaskCollator:
         if answer_len <= 0:
             return torch.zeros(0, dtype=torch.bool, device=device), 0.0
         generator = self.generator
-        rand_val = random.random() if generator is None else torch.rand(1, generator=generator).item()
+        rand_val = (
+            random.random()
+            if generator is None
+            else torch.rand(1, generator=generator).item()
+        )
         force_full = rand_val < self.full_mask_probability
         if force_full:
             mask = torch.ones(answer_len, dtype=torch.bool, device=device)
@@ -217,9 +232,18 @@ class ClozeMaskCollator:
 
         batch_size = len(samples)
         device = torch.device("cpu")
-        clean_ids = torch.full((batch_size, self.max_length), self.pad_token_id, dtype=torch.long, device=device)
-        attention_mask = torch.zeros((batch_size, self.max_length), dtype=torch.bool, device=device)
-        masked_positions = torch.zeros((batch_size, self.max_length), dtype=torch.bool, device=device)
+        clean_ids = torch.full(
+            (batch_size, self.max_length),
+            self.pad_token_id,
+            dtype=torch.long,
+            device=device,
+        )
+        attention_mask = torch.zeros(
+            (batch_size, self.max_length), dtype=torch.bool, device=device
+        )
+        masked_positions = torch.zeros(
+            (batch_size, self.max_length), dtype=torch.bool, device=device
+        )
         response_mask = torch.zeros_like(masked_positions)
         answer_token_mask = torch.zeros_like(masked_positions)
         first_answer_mask = torch.zeros_like(masked_positions)
@@ -229,8 +253,12 @@ class ClozeMaskCollator:
 
         for idx, sample in enumerate(samples):
             prefix, answer, suffix = self._split_cloze_sentence(sample.text)
-            prefix_ids, answer_ids, suffix_ids = self._encode_segments(prefix, answer, suffix)
-            prefix_ids, answer_ids, suffix_ids = self._trim_segments(prefix_ids, answer_ids, suffix_ids)
+            prefix_ids, answer_ids, suffix_ids = self._encode_segments(
+                prefix, answer, suffix
+            )
+            prefix_ids, answer_ids, suffix_ids = self._trim_segments(
+                prefix_ids, answer_ids, suffix_ids
+            )
             if not answer_ids:
                 answer_ids = [self.mask_token_id]
             seq = prefix_ids + answer_ids + suffix_ids
@@ -315,7 +343,9 @@ class PromptResponseDataset(Dataset):
     ) -> None:
         self.jsonl_path = Path(jsonl_path)
         if not self.jsonl_path.exists():
-            raise FileNotFoundError(f"PromptResponse dataset not found: {self.jsonl_path}")
+            raise FileNotFoundError(
+                f"PromptResponse dataset not found: {self.jsonl_path}"
+            )
         self.include_context = include_context
         self.context_separator = context_separator
         self._records: List[Dict[str, Any]] = []
@@ -333,7 +363,9 @@ class PromptResponseDataset(Dataset):
                 context = obj.get("context")
                 if self.include_context and context:
                     if isinstance(context, list):
-                        context_block = self.context_separator.join(str(x) for x in context if x).strip()
+                        context_block = self.context_separator.join(
+                            str(x) for x in context if x
+                        ).strip()
                     else:
                         context_block = str(context).strip()
                 if context_block:
@@ -433,7 +465,11 @@ class SFTMaskCollator:
             self.pad_token_id = int(tokenizer.eos_token_id)
         else:
             self.pad_token_id = 0
-        self.bos_token_id = tokenizer.convert_tokens_to_ids("<BOS>") if prepend_bos else tokenizer.bos_token_id
+        self.bos_token_id = (
+            tokenizer.convert_tokens_to_ids("<BOS>")
+            if prepend_bos
+            else tokenizer.bos_token_id
+        )
         self.eos_token_id = tokenizer.eos_token_id
         self.user_token_id = tokenizer.convert_tokens_to_ids(user_token)
         self.assistant_token_id = tokenizer.convert_tokens_to_ids(assistant_token)
@@ -444,7 +480,9 @@ class SFTMaskCollator:
             ("eot_token", self.eot_token_id),
         ]:
             if tid is None or tid < 0:
-                raise ValueError(f"Tokenizer missing special token for {name}. Please add it in config.")
+                raise ValueError(
+                    f"Tokenizer missing special token for {name}. Please add it in config."
+                )
         self.special_token_ids = {
             self.pad_token_id,
             self.mask_token_id,
@@ -459,11 +497,15 @@ class SFTMaskCollator:
         self.mask_t_distribution = str(mask_t_distribution)
         self.mask_t_beta_k = float(mask_t_beta_k)
         if self.mask_t_distribution not in ("uniform", "beta"):
-            raise ValueError(f"Unsupported mask_t_distribution: {self.mask_t_distribution}")
+            raise ValueError(
+                f"Unsupported mask_t_distribution: {self.mask_t_distribution}"
+            )
         if self.mask_t_distribution == "beta" and self.mask_t_beta_k <= 0:
             raise ValueError("mask_t_beta_k must be positive for beta distribution.")
 
-    def _maybe_add_specials(self, ids: List[int], add_bos: bool, add_eos: bool) -> List[int]:
+    def _maybe_add_specials(
+        self, ids: List[int], add_bos: bool, add_eos: bool
+    ) -> List[int]:
         new_ids = list(ids)
         if add_bos and self.bos_token_id is not None:
             new_ids = [self.bos_token_id] + new_ids
@@ -478,23 +520,34 @@ class SFTMaskCollator:
         valid_mask: torch.Tensor,
         tokenwise_scale: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        return apply_random_mask(
-            clean_input=clean_input,
-            attention_mask=attention_mask,
-            valid_mask=valid_mask,
-            mask_token_id=self.mask_token_id,
-            eps=self.eps,
+        if tokenwise_scale is not None or self.mask_t_distribution != "uniform":
+            raise NotImplementedError(
+                "tokenwise_p_scale / beta t-distribution were removed with the "
+                "dllm migration (not likelihood-bound-consistent)"
+            )
+        maskable = valid_mask.bool() & attention_mask.bool()
+        m = forward_process(
+            clean_input,
+            self.mask_token_id,
+            maskable=maskable,
+            schedule=LinearSchedule(eps=self.eps),
             generator=self.generator,
-            tokenwise_p_scale=tokenwise_scale,
-            t_distribution=self.mask_t_distribution,
-            beta_k=self.mask_t_beta_k,
+            min_one_mask=True,
         )
+        target = make_labels(clean_input, m.masked_indices)
+        target[~attention_mask.bool()] = -100
+        return m.noisy_ids, target, m.masked_indices, m.p_mask[:, 0]
 
     def __call__(self, batch: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         tokenizer = self.tokenizer
 
         def _strip_special_prompt(text: str) -> str:
-            for tok in ("<BOS>", "<start_id>user<end_id>", "<start_id>assistant<end_id>", "<eot_id>"):
+            for tok in (
+                "<BOS>",
+                "<start_id>user<end_id>",
+                "<start_id>assistant<end_id>",
+                "<eot_id>",
+            ):
                 text = text.replace(tok, "")
             return text.strip()
 
@@ -535,13 +588,15 @@ class SFTMaskCollator:
                 if overflow > 0 and len(prompt_ids) > 0:
                     trim = min(len(prompt_ids), overflow)
                     prompt_ids = prompt_ids[trim:]
-                seq = (prompt_ids + answer_tokens)[-self.max_length:]
+                seq = (prompt_ids + answer_tokens)[-self.max_length :]
             sequences.append(seq)
             prompt_lens.append(min(len(prompt_ids), self.max_length))
             uids.append(str(sample.get("uid", idx)))
             sample_type = str(sample.get("answer_type", "name"))
             if sample_type not in ("name", "job"):
-                sample_type = "job" if self._looks_like_job(sample.get("prompt", "")) else "name"
+                sample_type = (
+                    "job" if self._looks_like_job(sample.get("prompt", "")) else "name"
+                )
             answer_types.append(sample_type)
             tags = sample.get("logic_tags", [])
             logic_tags.append(tags if isinstance(tags, list) else [tags])
@@ -549,8 +604,15 @@ class SFTMaskCollator:
         batch_size = len(sequences)
         device = torch.device("cpu")
         batch_max_len = min(self.max_length, max(len(s) for s in sequences))
-        clean_input = torch.full((batch_size, self.max_length), self.pad_token_id, dtype=torch.long, device=device)
-        attention_mask = torch.zeros((batch_size, self.max_length), dtype=torch.bool, device=device)
+        clean_input = torch.full(
+            (batch_size, self.max_length),
+            self.pad_token_id,
+            dtype=torch.long,
+            device=device,
+        )
+        attention_mask = torch.zeros(
+            (batch_size, self.max_length), dtype=torch.bool, device=device
+        )
         prompt_lengths = torch.tensor(prompt_lens, dtype=torch.long, device=device)
 
         for i, seq in enumerate(sequences):
@@ -560,14 +622,20 @@ class SFTMaskCollator:
                 clean_input[i, :fill_len] = torch.tensor(seq, dtype=torch.long)
                 attention_mask[i, :fill_len] = True
             if fill_len < batch_max_len:
-                eos_val = self.eot_token_id if self.eot_token_id is not None else self.pad_token_id
+                eos_val = (
+                    self.eot_token_id
+                    if self.eot_token_id is not None
+                    else self.pad_token_id
+                )
                 clean_input[i, fill_len:batch_max_len] = eos_val
                 attention_mask[i, fill_len:batch_max_len] = True
 
         answer_lengths = torch.clamp(batch_max_len - prompt_lengths, min=0)
 
         seq_len = attention_mask.size(1)
-        position_ids = torch.arange(seq_len, device=device).unsqueeze(0).expand(batch_size, -1)
+        position_ids = (
+            torch.arange(seq_len, device=device).unsqueeze(0).expand(batch_size, -1)
+        )
         prompt_mask = position_ids < prompt_lengths.unsqueeze(1)
         special_mask = torch.zeros_like(clean_input, dtype=torch.bool)
         for token_id in self.special_token_ids:
@@ -575,8 +643,12 @@ class SFTMaskCollator:
         valid_positions = attention_mask & (~prompt_mask) & (~special_mask)
 
         tokenwise_scale: Optional[torch.Tensor] = None
-        if not math.isclose(self.answer_mask_scalar, 1.0) or not math.isclose(self.answer_eos_mask_scalar, 1.0):
-            tokenwise_scale = torch.ones_like(clean_input, dtype=torch.float32, device=device)
+        if not math.isclose(self.answer_mask_scalar, 1.0) or not math.isclose(
+            self.answer_eos_mask_scalar, 1.0
+        ):
+            tokenwise_scale = torch.ones_like(
+                clean_input, dtype=torch.float32, device=device
+            )
             answer_region = attention_mask & (~prompt_mask)
             content_mask = answer_region.clone()
             eos_mask = torch.zeros_like(answer_region)

@@ -8,12 +8,11 @@ The project features a decoupled architecture, separating the core diffusion alg
 
 ## 1. System Architecture
 
-### 1.1 Core Engine (`diffusion_core/`)
-A standalone, detachable module containing the mathematical foundations of Masked Diffusion LMs:
-*   `model.py`: Bidirectional Transformer architecture with support for tied embeddings and variable sequence lengths.
-*   `masking.py`: LLaDA-style forward noising logic using Bernoulli trials based on time-step $t$.
-*   `loss.py`: Masked Cross-Entropy loss with $1/p$ importance sampling.
-*   `inference.py`: Iterative denoising generation engine supporting block-wise parallel decoding and confidence-based remasking.
+### 1.1 Core Engine (`dllm` package)
+The masked-diffusion core (model / forward process / loss / samplers) is provided
+by the external [`dllm`](https://github.com/Tieumi221E/dllm) package:
+bidirectional Transformer backbone, LLaDA-style forward noising, importance-weighted
+masked cross-entropy, and full-canvas / block-wise samplers.
 
 ### 1.2 Experiment Scripts (`scripts/`)
 Workflow scripts tailored for Knowledge Graph reasoning tasks:
@@ -32,8 +31,17 @@ Workflow scripts tailored for Knowledge Graph reasoning tasks:
 ## 2. Quick Start
 
 ### 2.1 Installation
+
+The code imports `dllm`, the masked-diffusion toolkit maintained in
+[`Tieumi221E/dllm`](https://github.com/Tieumi221E/dllm). It is project source
+code rather than a PyPI requirement. This release uses commit
+`205d08882d2de3305a1b75e2e29613d87e569e5a`.
+
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/Tieumi221E/dllm.git
+git -C dllm checkout 205d08882d2de3305a1b75e2e29613d87e569e5a
+python -m pip install -e ./dllm
+python -m pip install -r requirements.txt
 ```
 
 ### 2.2 Data Preparation
@@ -64,3 +72,7 @@ python scripts/plot_results.py --log runs/sft/kgd_1000/train.log --metrics-dir r
 
 ---
 *Note: This repository is intended for research purposes. Ensure proper hardware resources (GPU) for training.*
+
+## License
+
+MIT. See [LICENSE](LICENSE).

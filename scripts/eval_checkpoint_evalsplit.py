@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from scripts.datasets import PromptResponseDataset, SFTMaskCollator  # noqa: E402
 from scripts.train_utils import build_tokenizer, load_yaml, build_model, load_checkpoint  # noqa: E402
-from scripts.eval_utils import evaluate_em_token
+from scripts.eval_utils import evaluate_em_token  # noqa: E402
 
 
 EVAL_SPLITS: Tuple[Tuple[str, str, bool], ...] = (
@@ -39,7 +39,9 @@ EVAL_SPLITS: Tuple[Tuple[str, str, bool], ...] = (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a single checkpoint on QA JSONL files.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a single checkpoint on QA JSONL files."
+    )
     parser.add_argument("--config", type=Path, default=Path("configs/sft_mdm.yaml"))
     parser.add_argument(
         "--checkpoint",
@@ -55,8 +57,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--output-json", type=Path, default=None, help="Optional path to dump metrics JSON.")
+    parser.add_argument(
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+    )
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional path to dump metrics JSON.",
+    )
     parser.add_argument(
         "--mask-option",
         type=str,
@@ -70,7 +79,9 @@ def resolve_eval_mask_settings(
     collator_cfg: Dict[str, object],
     override_mask_option: Optional[str],
 ) -> Tuple[str, Optional[str]]:
-    eval_mask_mode = str(collator_cfg.get("eval_mask_mode", "full_block") or "full_block")
+    eval_mask_mode = str(
+        collator_cfg.get("eval_mask_mode", "full_block") or "full_block"
+    )
     eval_fixed_option = collator_cfg.get("eval_fixed_mask_option", "full")
     mask_option = override_mask_option or eval_fixed_option
     if eval_mask_mode == "fixed_window" and override_mask_option is None:
@@ -150,7 +161,7 @@ def main() -> None:
     device = torch.device(args.device)
     load_checkpoint(args.checkpoint, model)
     model.to(device)
-    
+
     default_seq_len = int(
         collator_cfg.get(
             "max_length",
@@ -187,12 +198,14 @@ def main() -> None:
             context_separator=context_separator,
         )
 
-        em_rate, correct, count, token_acc, token_correct, token_count = evaluate_em_token(
-            model,
-            loader,
-            device,
-            tokenizer,
-            collator_cfg,
+        em_rate, correct, count, token_acc, token_correct, token_count = (
+            evaluate_em_token(
+                model,
+                loader,
+                device,
+                tokenizer,
+                collator_cfg,
+            )
         )
         metrics[name] = {
             "em": em_rate,
@@ -207,11 +220,13 @@ def main() -> None:
         total_token_correct += token_correct
         total_token_count += token_count
         print(
-            f"{name:35s} | em={em_rate*100:6.2f}% ({correct}/{count}) "
-            f"token_acc={token_acc*100:6.2f}%"
+            f"{name:35s} | em={em_rate * 100:6.2f}% ({correct}/{count}) "
+            f"token_acc={token_acc * 100:6.2f}%"
         )
 
-    overall_em = float(total_correct) / float(total_samples) if total_samples > 0 else 0.0
+    overall_em = (
+        float(total_correct) / float(total_samples) if total_samples > 0 else 0.0
+    )
     overall_token_acc = (
         total_token_correct / total_token_count if total_token_count > 0 else 0.0
     )
@@ -225,8 +240,8 @@ def main() -> None:
     }
     print("-" * 60)
     print(
-        f"QA completion (all): em={overall_em*100:6.2f}% ({total_correct}/{total_samples}) "
-        f"token_acc={overall_token_acc*100:6.2f}%"
+        f"QA completion (all): em={overall_em * 100:6.2f}% ({total_correct}/{total_samples}) "
+        f"token_acc={overall_token_acc * 100:6.2f}%"
     )
 
     if args.output_json is not None:
