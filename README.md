@@ -36,12 +36,12 @@ The code imports `dllm`, the masked-diffusion toolkit maintained in
 [`Tieumi221E/dllm`](https://github.com/Tieumi221E/dllm). It is project source
 code rather than a PyPI requirement. The original experiment used
 `e22684e48a6a4e2637f5112bbaff508b125c7643`; the current code is verified
-against `c7616f6f6ebdb433ef9afac5140263eed5e30d20` (`dllm` 1.3.1), pinned
+against `b176c21c68c004607f28a5bea9f929304470668b` (`dllm` 1.3.2), pinned
 below.
 
 ```bash
 git clone https://github.com/Tieumi221E/dllm.git
-git -C dllm checkout c7616f6f6ebdb433ef9afac5140263eed5e30d20
+git -C dllm checkout b176c21c68c004607f28a5bea9f929304470668b
 python -m pip install -e ./dllm
 python -m pip install -r requirements.txt
 ```
