@@ -2,6 +2,7 @@
 /datasets/
 /runs/
 /ref/
+private/
 /history/
 
 # Python cache
