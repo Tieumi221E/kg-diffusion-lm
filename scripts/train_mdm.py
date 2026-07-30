@@ -17,8 +17,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dllm import DiffusionTransformer  # noqa: E402
-
 from scripts.train_utils import (  # noqa: E402
     set_global_seed,
     load_yaml,
@@ -30,6 +28,7 @@ from scripts.train_utils import (  # noqa: E402
     load_checkpoint,
     cleanup_checkpoints,
     build_tokenizer,
+    build_model,
     create_grad_scaler,
     mdm_loss,
     mdm_loss_sum,
@@ -201,14 +200,7 @@ def main():
         data_cfg, tokenizer, collator_cfg, max_length
     )
 
-    model = DiffusionTransformer(
-        vocab_size=len(tokenizer),
-        max_position_embeddings=max_length,
-        hidden_size=config["model"]["hidden_size"],
-        num_layers=config["model"]["num_hidden_layers"],
-        num_heads=config["model"]["num_attention_heads"],
-        intermediate_size=config["model"]["intermediate_size"],
-    ).to(device)
+    model = build_model(config["model"], len(tokenizer), max_length).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(optimizer_cfg["lr"]))
     scheduler = linear_warmup_cosine_decay_schedule(

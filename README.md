@@ -35,11 +35,11 @@ Workflow scripts tailored for Knowledge Graph reasoning tasks:
 The code imports `dllm`, the masked-diffusion toolkit maintained in
 [`Tieumi221E/dllm`](https://github.com/Tieumi221E/dllm). It is project source
 code rather than a PyPI requirement. This release uses commit
-`205d08882d2de3305a1b75e2e29613d87e569e5a`.
+`e22684e48a6a4e2637f5112bbaff508b125c7643`.
 
 ```bash
 git clone https://github.com/Tieumi221E/dllm.git
-git -C dllm checkout 205d08882d2de3305a1b75e2e29613d87e569e5a
+git -C dllm checkout e22684e48a6a4e2637f5112bbaff508b125c7643
 python -m pip install -e ./dllm
 python -m pip install -r requirements.txt
 ```
